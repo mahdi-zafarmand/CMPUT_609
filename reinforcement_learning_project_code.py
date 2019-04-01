@@ -59,8 +59,7 @@ class World:
         self.environment['start'] = 20
         self.environment['goal'] = 4
         self.environment['checkpoint'] = 17
-        self.P = np.zeros((len(self.states), len(self.actions['actions'])))
-        self.Q = np.zeros(self.P.shape)
+        
 
     def make_greedy(self, s, epsilon):
         ACTIONS = self.actions['actions']
@@ -69,9 +68,11 @@ class World:
         self.P[s, best_a] = 1 - epsilon
         assert np.isclose(np.sum(self.P[s, :]), 1)
 
+
     def choose_action(self, s, epsilon):
         self.make_greedy(s, epsilon)
         return np.random.choice(self.actions['actions'], p=self.P[s, :])
+
 
     def choose_sigma(self, mode):
         if mode == 'SARSA':
@@ -84,6 +85,7 @@ class World:
             print('ERROR, incorrcet sigma mode!')
             return None
 
+
     def move(self, s, a):
         self.checkpoint = False
         if a == 0:
@@ -95,6 +97,7 @@ class World:
         else:
             print('ERROR, incorrcet action!')
             return None
+
 
     def move_helper(self, s_prev, s_next, direction):
         self.environment['grid'][self.states[s_prev]] = direction
@@ -110,6 +113,7 @@ class World:
             return s_next, self.rewards['win']
         else:
             return s_next, self.rewards['step']
+
 
 def set_args():
     args = dict()
