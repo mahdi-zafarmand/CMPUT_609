@@ -2,6 +2,7 @@ import numpy as np
 import argparse
 import math
 from datetime import datetime as dt
+import time
 
 
 class World:
@@ -268,7 +269,7 @@ def main():
                         episode_terms['q'].append(world_instance.Q[s_next, a_next])
                         target = r + sigma * args['gamma'] * episode_terms['q'][t + 1]
                         target += (1 - sigma) * args['gamma'] * np.dot(world_instance.P[s_next, :], world_instance.Q[s_next, :])
-                        target += target - episode_terms['q'][t]
+                        target -= episode_terms['q'][t]
                         episode_terms['targets'].append(target)
                         episode_terms['p'].append(world_instance.P[s_next, a_next])
                 tau = t - args['n_steps'] + 1
@@ -278,9 +279,11 @@ def main():
                     for k in range(tau, min(t, T - 1)):
                         G += E * episode_terms['targets'][k]
                         E *= args['gamma'] * ((1-episode_terms['sigmas'][k + 1]) * episode_terms['p'][k + 1] + episode_terms['sigmas'][k + 1])
+
                     error = G - world_instance.Q[episode_terms['states'][tau], episode_terms['actions'][tau]]
                     world_instance.Q[episode_terms['states'][tau], episode_terms['actions'][tau]] += args['alpha'] * error
                     world_instance.make_greedy(episode_terms['states'][tau], args['epsilon'])
+
                 if tau == T - 1:
                     break
             
