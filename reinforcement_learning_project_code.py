@@ -13,56 +13,27 @@ class World:
         self.actions = {}
         self.rewards = {}
         self.initialize()
+        self.sigma = 0.5     
+        self.checkpoint = False   
         self.P = np.zeros((len(self.states), len(self.actions['actions'])))
         self.Q = np.zeros(self.P.shape)
 
     def initialize(self):
-        self.create_environment_1()
-        self.set_states()
-        self.set_velocity_measures()
         self.set_actions()
+        self.reset()
+        self.set_states()
         self.set_rewards()
-        self.checkpoint = False
-
-    def create_environment_1(self):
-        grid = np.array([
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "G"],
-            ["_", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["X", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "#", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["S", "_", "_", "_", "_", "_", "_", "_", "_", "_"]
-        ])
-        obstacles = [11, 12, 13, 14, 15, 16, 17, 18, 19, 50]
-        start = 90
-        goal = 9
-        checkpoint = 64
-        self.environment['grid'] = grid
-        self.environment['size'] = grid.shape[0]
-        self.environment['obstacles'] = obstacles
-        self.environment['start'] = start
-        self.environment['goal'] = goal
-        self.environment['checkpoint'] = checkpoint
 
     def set_states(self):
         size_of_environment = self.environment['grid'].shape
         for i in range(size_of_environment[0] * size_of_environment[1]):
             self.states.append((i // size_of_environment[0], i % size_of_environment[1]))
 
-    def set_velocity_measures(self):
-        self.velocity['MAX'] = 3
-        self.velocity['MIN'] = 0
-        self.velocity['V'] = 0
-
     def set_actions(self):
-        self.actions['_RIGHT'] = 0; self.actions['RIGHT'] = 1; self.actions['RIGHT_'] = 2
-        self.actions['_UP'] = 3; self.actions['UP'] = 4; self.actions['UP_'] = 5
-        self.actions['_LEFT'] = 6; self.actions['LEFT'] = 7; self.actions['LEFT_'] = 8
-        self.actions['actions'] = range(9)
+        self.actions['RIGHT'] = 0
+        self.actions['UP'] = 1
+        self.actions['LEFT'] = 2
+        self.actions['actions'] = range(3)
 
     def set_rewards(self):
         self.rewards['crash'] = -10
@@ -71,24 +42,29 @@ class World:
         self.rewards['step'] = -1
 
     def reset(self):
-        self.environment['grid'] = np.array([
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "G"],
-            ["_", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["X", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "#", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
-            ["S", "_", "_", "_", "_", "_", "_", "_", "_", "_"]
+        grid = np.array([
+            ["_", "_", "_", "_", "G"],
+            ["_", "_", "_", "_", "_"],
+            ["_", "_", "_", "_", "_"],
+            ["_", "_", "#", "_", "_"],
+            ["S", "_", "_", "_", "_"]
         ])
-        self.velocity['V'] = 0
-        self.velocity['V_MAX'] = 3
+        self.environment['grid'] = grid
+        self.environment['size'] = grid.shape[0]
+        self.environment['borders'] = {}
+        self.environment['borders']['>'] = range(grid.shape[0]-1, grid.shape[0]**2, grid.shape[0])
+        self.environment['borders']['<'] = range(0, grid.shape[0]**2, grid.shape[0])
+        self.environment['borders']['|'] = range(grid.shape[0])
+        self.environment['obstacles'] = []
+        self.environment['start'] = 20
+        self.environment['goal'] = 4
+        self.environment['checkpoint'] = 17
+        self.P = np.zeros((len(self.states), len(self.actions['actions'])))
+        self.Q = np.zeros(self.P.shape)
 
     def make_greedy(self, s, epsilon):
         ACTIONS = self.actions['actions']
-        self.P[s, :] = [epsilon / (len(ACTIONS) - 1.)] * len(ACTIONS)
+        self.P[s, :] = [epsilon / (len(ACTIONS) - 1)]
         best_a = np.argmax(self.Q[s, :])
         self.P[s, best_a] = 1 - epsilon
         assert np.isclose(np.sum(self.P[s, :]), 1)
@@ -103,93 +79,37 @@ class World:
         elif mode == 'TreeBackUp':
             return 0
         elif mode == 'Qsigma':
-            return (int) (np.random.random() < 0.5)
+            return (int) (np.random.random() < self.sigma)
         else:
             print('ERROR, incorrcet sigma mode!')
             return None
 
-    def move(self, s, a, beta):
-        if np.random.random() < 1-beta:
-            if a in [0, 3, 6] and self.velocity['V'] > self.velocity['V_MIN']:
-                self.velocity['V'] -= 1
-            elif a in [2, 5, 8] and self.velocity['V'] < self.velocity['V_MIN']:
-                self.velocity['V'] += 1
-        
-        WIDTH = self.environment['size']
-        r_border = range(WIDTH-1, WIDTH**2, WIDTH)
-        l_border = range(0, WIDTH**2, WIDTH)
-        t_border = range(WIDTH)
-        units = range(self.velocity['V'])
+    def move(self, s, a):
         self.checkpoint = False
-
-        if a < (len(self.actions['actions']) / 3):
-            return self.move_right(s, units, r_border)
-        elif a < 2 * (len(self.actions['actions']) / 3):
-            return self.move_up(s, units, t_border)
-        elif a < len(self.actions['actions']):
-            return self.move_left(s, units, l_border)
+        if a == 0:
+            return self.move_helper(s, s + 1, '>')
+        elif a == 1:
+            return self.move_helper(s, s - self.environment['size'], '|')
+        elif a == 2:
+            return self.move_helper(s, s - 1, '<')
         else:
             print('ERROR, incorrcet action!')
             return None
 
-    def move_right(self, s, units, r_border):
-        for i in units:
-            self.environment['grid'][self.states[s + i]] = '>'
-            if (s + i) in r_border or (s + i + 1) in self.environment['obstacles']:
-                self.reset()
-                return self.environment['start'], self.rewards['crash']
-            elif (s + i + 1) == self.environment['checkpoint']:
-                self.checkpoint = self.velocity['V_MAX'] != 5
-                self.velocity['V_MAX'] = 5
-            elif (s + i + 1) == self.environment['goal']:
-                self.environment['grid'][self.states[s + i + 1]] = 'O'
-                return s + i + 1, self.rewards['win']
-
-        self.environment['grid'][self.states[s + self.velocity['V']]] = 'O'
-        if self.checkpoint:
-            return (s + self.velocity['V'], self.rewards['checkpoint']) 
+    def move_helper(self, s_prev, s_next, direction):
+        self.environment['grid'][self.states[s_prev]] = direction
+        border = self.environment['borders'][direction]
+        if s_prev in border or s_next in self.environment['obstacles']:
+            self.reset()
+            return self.environment['start'], self.rewards['crash']
+        self.environment['grid'][self.states[s_next]] = 'O'
+        if s_next == self.environment['checkpoint']:
+            self.checkpoint = True
+            return s_next, self.rewards['checkpoint']
+        elif s_next == self.environment['goal']:
+            return s_next, self.rewards['win']
         else:
-            return (s + self.velocity['V'], self.rewards['step'])
-
-    def move_up(self, s, units, t_border):
-        WIDTH = self.environment['size']
-        for i in units:
-            self.environment['grid'][self.states[s - i * WIDTH]] = '|'
-            if (s - i * WIDTH) in t_border or (s - (i + 1) * WIDTH) in self.environment['obstacles']:
-                self.reset()
-                return self.environment['start'], self.rewards['crash']
-            elif (s + i + 1) == self.environment['checkpoint']:
-                self.checkpoint = self.velocity['V_MAX'] != 5
-                self.velocity['V_MAX'] = 5
-            elif (s - (i + 1) * WIDTH) == self.environment['goal']:
-                self.environment['grid'][self.states[s - (i + 1) * WIDTH]] = 'O'
-                return s - (i + 1) * WIDTH, self.rewards['win']
-
-        self.environment['grid'][self.states[s + self.velocity['V']]] = 'O'
-        if self.checkpoint:
-            return (s - self.velocity['V'] * WIDTH, self.rewards['checkpoint']) 
-        else:
-            return (s - self.velocity['V'] * WIDTH, self.rewards['step'])
-
-    def move_left(self, s, units, l_border):
-        for i in units:
-            self.environment['grid'][self.states[s - i]] = '<'
-            if (s - i) in l_border or (s - i - 1) in self.environment['obstacles']:
-                self.reset()
-                return self.environment['start'], self.rewards['crash']
-            elif (s - i - 1) == self.environment['checkpoint']:
-                self.checkpoint = self.velocity['V_MAX'] != 5
-                self.velocity['V_MAX'] = 5
-            elif (s - i - 1) == self.environment['goal']:
-                self.environment['grid'][self.states[s - i - 1]] = 'O'
-                return s - i - 1, self.rewards['win']
-
-        self.environment['grid'][self.states[s - self.velocity['V']]] = 'O'
-        if self.checkpoint:
-            return (s - self.velocity['V'], self.rewards['checkpoint']) 
-        else:
-            return (s - self.velocity['V'], self.rewards['step'])
-
+            return s_next, self.rewards['step']
 
 def set_args():
     args = dict()
@@ -199,38 +119,36 @@ def set_args():
     args['gamma'] = 0.99
     args['alpha'] = 0.1
     args['epsilon'] = 0.1
-    args['beta'] = 1
     args['n_experiments'] = 10
     return args
     
 
-def setup_experiment(world):
-    P = np.zeros((len(world.states), len(world.actions['actions'])))
-    Q = np.zeros(P.shape)
+def setup_experiment():
     n_steps = []
     rewards = []
-    return P, Q, n_steps, rewards
+    return n_steps, rewards
 
 
-def initialize_episode_args():
+def initialize_episode_terms():
     episode_terms = {}
     episode_terms['steps'] = 0
     episode_terms['reward'] = 0
     episode_terms['states'] = []
     episode_terms['actions'] = []
-    episode_terms['q'] = []
     episode_terms['p'] = []
-    episode_terms['sigmas'] = [1]
+    episode_terms['q'] = []
     episode_terms['targets'] = []
     return episode_terms
 
 
-def initialize_episode(world, episode_terms, args):
-    episode_terms['states'].append(world.environment['start'])
+def initialize_episode(world, args):
+    episode_terms = initialize_episode_terms()
     action = world.choose_action(world.environment['start'], args['epsilon'])
+    episode_terms['states'].append(world.environment['start'])
     episode_terms['actions'].append(action)
-    episode_terms['q'].append(world.Q[world.environment['start'], action])
+    episode_terms['sigmas'] = [1]
     episode_terms['p'].append(world.P[world.environment['start'], action])
+    episode_terms['q'].append(world.Q[world.environment['start'], action])
     return -1, np.inf, episode_terms
 
 
@@ -241,20 +159,18 @@ def main():
     average_reward = []
     
     for _ in range(args['n_experiments']):
-        P, Q, n_steps, rewards = setup_experiment(world_instance)
-        start = dt.now()
+        n_steps, rewards = setup_experiment()
 
-        for ep in range(args['n_episodes']):
-            print('\nEpisode: ' + str(_ + 1) + '/' + str(args['n_episodes']) + " ...")
+        for episode in range(args['n_episodes']):
+            print('\nEpisode: ' + str(episode + 1) + '/' + str(args['n_episodes']) + " ...")
             world_instance.reset()
-            episode_terms = initialize_episode_args()
-            t, T, episode_terms = initialize_episode(world_instance, episode_terms, args)
+            t, T, episode_terms = initialize_episode(world_instance, args)
 
             while True:
                 t += 1
                 assert len(episode_terms['actions']) == len(episode_terms['sigmas']) == len(episode_terms['p']) == len(episode_terms['q'])
                 if t < T:
-                    s_next, r = world_instance.move(episode_terms['states'][t], episode_terms['actions'][t], args['beta'])
+                    s_next, r = world_instance.move(episode_terms['states'][t], episode_terms['actions'][t])
                     episode_terms['states'].append(s_next)
                     episode_terms['steps'] += 1
                     episode_terms['reward'] += r
@@ -288,6 +204,7 @@ def main():
                     break
             
             print(world_instance.environment['grid'])
+            print('number of steps = ' + str(episode_terms['steps']))
             n_steps.append(episode_terms['steps'])
             rewards.append(episode_terms['reward'])
         
