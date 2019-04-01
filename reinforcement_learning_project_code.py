@@ -4,7 +4,7 @@ import math
 from datetime import datetime as dt
 
 
-class project:
+class World:
     def __init__(self):
         self.environment = {}
         self.states = []
@@ -92,7 +92,7 @@ class project:
         self.policy[s, best_a] = 1 - epsilon
         assert np.isclose(np.sum(self.policy[s, :]), 1)
 
-    def choose_actions(self, s, epsilon):
+    def choose_action(self, s, epsilon):
         self.make_greedy(s, epsilon)
         return np.random.choice(self.actions['actions'], p=self.policy[s, :])
 
@@ -118,7 +118,6 @@ class project:
         r_border = range(WIDTH-1, WIDTH**2, WIDTH)
         l_border = range(0, WIDTH**2, WIDTH)
         t_border = range(WIDTH)
-
         units = range(self.velocity['V'])
         self.checkpoint = False
 
@@ -191,9 +190,78 @@ class project:
             return (s - self.velocity['V'], self.rewards['step'])
 
 
+def set_args():
+    args = dict()
+    args['mode'] = 'SARSA'
+    args['n_episodes'] = 1000
+    args['n_steps'] = 5
+    args['gamma'] = 0.99
+    args['alpha'] = 0.1
+    args['epsilon'] = 0.1
+    args['beta'] = 1
+    args['n_experiments'] = 10
+    return args
+    
+
+def setup_experiment(world):
+    P = np.zeros((len(world.states), len(world.actions['actions'])))
+    Q = np.zeros(P.shape)
+    n_step = []
+    rewards = []
+    return P, Q, n_step, rewards
+
+
+def initialize_episode_args():
+    episode_terms.steps = 0
+    episode_terms.reward = 0
+    episode_terms.states = []
+    episode_terms.actions = []
+    episode_terms.q = []
+    episode_terms.p = []
+    episode_terms.sigmas = [1]
+    episode_terms.targets = []
+    return episode_terms
+
+
+def initialize_episode(world, episode_terms, args):
+    episode_terms.states.append(world.environment['start'])
+    action = world.choose_action(world.environment['start'], args['epsilon'])
+    episode_terms.actions.append(action)
+    episode_terms.q.append(world.Q[world.environment['start'], action])
+    episode_terms.p.append(world.policy[world.environment['start'], action])
+    return -1, np.inf
+
+
 def main():
-    test = project()
-    test.choose_actions(1, 0.2)
+    world_instance = World()
+    args = set_args()
+    average_steps = []
+    average_reward = []
+    
+    for _ in range(args['n_experiments']):
+        P, Q, n_step, rewards = setup_experiment(world_instance)
+        start = dt.now()
+
+        for ep in range(args['n_episodes']):
+            print('\nEpisode: ' + str(_ + 1) + '/' + str(args['n_episodes']) + " ...")
+            world_instance.reset()
+            episode_terms = initialize_episode_args()
+            t, T = initialize_episode(world_instance, episode_terms, args)
+
+            while True:
+                t += 1
+                assert len(episode_terms.actions) == len(episode_terms.sigmas) == len(episode_terms.p) == len(episode_terms.q)
+                if t < T:
+                    s_next, r = world_instance.move(episode_terms.states[t], args['beta'])
+                    episode_terms.states.append(s_next)
+                    episode_terms.steps += 1
+                    episode_terms.reward += r
+                    if s_next == world_instance.environment['goal']:
+                        T = t + 1
+                        episode_terms.targets.append(r - )
+    
+    #  print('HELLO_WORLD')
+
 
 if __name__ == "__main__":
     main()
