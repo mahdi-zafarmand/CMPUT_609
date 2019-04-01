@@ -262,7 +262,7 @@ def main():
                         episode_terms['targets'].append(r - episode_terms['q'][t])
                     else:
                         a_next = world_instance.choose_action(episode_terms['states'][t+ 1], args['epsilon'])
-                        episode_terms['actions'].append(s_next)
+                        episode_terms['actions'].append(a_next)
                         sigma = world_instance.choose_sigma(args['mode'])
                         episode_terms['sigmas'].append(sigma)
                         episode_terms['q'].append(world_instance.Q[s_next, a_next])
@@ -277,7 +277,7 @@ def main():
                     G = episode_terms['q'][tau]
                     for k in range(tau, min(t, T - 1)):
                         G += E * episode_terms['targets'][k]
-                        E *= args['gamma'] * ((1-episode_terms['sigmas']) * episode_terms['p'][k + 1] + episode_terms['sigmas'][k + 1])
+                        E *= args['gamma'] * ((1-episode_terms['sigmas'][k + 1]) * episode_terms['p'][k + 1] + episode_terms['sigmas'][k + 1])
                     error = G - world_instance.Q[episode_terms['states'][tau], episode_terms['actions'][tau]]
                     world_instance.Q[episode_terms['states'][tau], episode_terms['actions'][tau]] += args['alpha'] * error
                     world_instance.make_greedy(episode_terms['states'][tau], args['epsilon'])
