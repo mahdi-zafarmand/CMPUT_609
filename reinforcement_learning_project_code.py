@@ -30,7 +30,8 @@ class World:
         self.actions['RIGHT'] = 0
         self.actions['UP'] = 1
         self.actions['LEFT'] = 2
-        self.actions['actions'] = range(3)
+        self.actions['DOWN'] = 3
+        self.actions['actions'] = range(len(self.actions))
 
     def set_rewards(self):
         self.rewards['crash'] = -10
@@ -40,23 +41,32 @@ class World:
 
     def reset(self):
         grid = np.array([
-            ["_", "_", "_", "_", "G"],
-            ["_", "_", "_", "_", "_"],
-            ["_", "_", "_", "_", "_"],
-            ["_", "_", "#", "_", "_"],
-            ["S", "_", "_", "_", "_"]
+            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "G"],
+            ["_", "X", "X", "X", "X", "X", "X", "X", "X", "X"],
+            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
+            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
+            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
+            ["X", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
+            ["_", "_", "_", "_", "#", "_", "_", "_", "_", "_"],
+            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
+            ["_", "_", "_", "_", "_", "_", "_", "_", "_", "_"],
+            ["S", "_", "_", "_", "_", "_", "_", "_", "_", "_"]
         ])
         self.environment['grid'] = grid
         self.environment['size'] = grid.shape[0]
         self.environment['borders'] = {}
         self.environment['borders']['>'] = range(grid.shape[0]-1, grid.shape[0]**2, grid.shape[0])
         self.environment['borders']['<'] = range(0, grid.shape[0]**2, grid.shape[0])
-        self.environment['borders']['|'] = range(grid.shape[0])
-        self.environment['obstacles'] = []
-        self.environment['start'] = 20
-        self.environment['goal'] = 4
-        self.environment['checkpoint'] = 17
-        
+        self.environment['borders']['^'] = range(grid.shape[0])
+        self.environment['borders']['v'] = range(grid.shape[0] * (grid.shape[0] - 1), grid.shape[0]**2)
+        self.environment['obstacles'] = [11, 12, 13, 14, 15, 16, 17, 18, 19, 50]
+        self.environment['start'] = 90
+        self.environment['goal'] = 9
+        self.environment['checkpoint'] = 64
+
+    def reset_p_and_q(self):
+        self.P = np.zeros((len(self.states), len(self.actions['actions'])))
+        self.Q = np.zeros(self.P.shape)        
 
     def make_greedy(self, s, epsilon):
         ACTIONS = self.actions['actions']
@@ -88,9 +98,11 @@ class World:
         if a == 0:
             return self.move_helper(s, s + 1, '>')
         elif a == 1:
-            return self.move_helper(s, s - self.environment['size'], '|')
+            return self.move_helper(s, s - self.environment['size'], '^')
         elif a == 2:
             return self.move_helper(s, s - 1, '<')
+        elif a == 3:
+            return self.move_helper(s, s + self.environment['size'], 'v')
         else:
             print('ERROR, incorrcet action!')
             return None
@@ -114,7 +126,7 @@ class World:
 
 def set_args():
     args = dict()
-    args['mode'] = 'SARSA'
+    args['mode'] = 'TreeBackUp'
     args['n_episodes'] = 1000
     args['n_steps'] = 5
     args['gamma'] = 0.99
@@ -161,7 +173,7 @@ def main():
     
     for _ in range(args['n_experiments']):
         n_steps, rewards = setup_experiment()
-
+        # world_instance.reset_p_and_q()
         for episode in range(args['n_episodes']):
             print('\nEpisode: ' + str(episode + 1) + '/' + str(args['n_episodes']) + " ...")
             world_instance.reset()
@@ -211,6 +223,8 @@ def main():
         
         average_steps.append(np.average(n_steps))
         print('average number of steps = ' + str(average_steps[-1]))
+        average_reward.append(np.average(rewards))
+        print('average return = ' + str(average_reward[-1]))
 
     print("\nsteps: " + str(average_steps))
     print("steps avg: " + str(np.average(average_steps)))
