@@ -118,10 +118,21 @@ class World:
             return s_next, self.rewards['step']
 
 
+class Experiment:
+    def __init__(self):
+        self.steps = 0
+        self.reward = 0
+        self.states = []
+        self.actions = []
+        self.p = []
+        self.q = []
+        self.targets = []
+
+
 def set_args():
     args = dict()
     args['mode'] = 'TreeBackUp'
-    args['n_episodes'] = 1000
+    args['n_episodes'] = 5000
     args['n_steps'] = 5
     args['gamma'] = 0.99
     args['alpha'] = 0.1
@@ -196,32 +207,35 @@ def get_next_action_and_sigma(world_instance, episode_terms, t, args):
     return a_next, sigma
 
 
+def run_an_episode(world_instance, episode, args, n_steps, rewards):
+    print('\nEpisode: ' + str(episode + 1) + '/' + str(args['n_episodes']) + " ...")
+    world_instance.reset()
+    t, tau, T, episode_terms = initialize_episode(world_instance, args)
+    while tau != T - 1:
+        t += 1
+        if t < T:
+            s_next, r = get_next_state_and_reward(world_instance, episode_terms, t)
+            if s_next == world_instance.environment['goal']:
+                T = t + 1
+                episode_terms['targets'].append(r - episode_terms['q'][t])
+            else:
+                a_next, sigma = get_next_action_and_sigma(world_instance, episode_terms, t, args)
+                episode_terms['q'].append(world_instance.Q[s_next, a_next])
+                target = calc_target(r, sigma, args, episode_terms, t, world_instance, s_next)
+                episode_terms['targets'].append(target)
+                episode_terms['p'].append(world_instance.P[s_next, a_next])
+        tau = update_Q_and_return_tau(world_instance, args, episode_terms, t, T)
+    
+    print(world_instance.environment['grid'])
+    print('number of steps = ' + str(episode_terms['steps']))
+    n_steps.append(episode_terms['steps'])
+    rewards.append(episode_terms['reward'])
+
 def run_an_experiment(args, world_instance, averages):
     n_steps, rewards = setup_experiment()
     # world_instance.reset_p_and_q()
     for episode in range(args['n_episodes']):
-        print('\nEpisode: ' + str(episode + 1) + '/' + str(args['n_episodes']) + " ...")
-        world_instance.reset()
-        t, tau, T, episode_terms = initialize_episode(world_instance, args)
-        while tau != T - 1:
-            t += 1
-            if t < T:
-                s_next, r = get_next_state_and_reward(world_instance, episode_terms, t)
-                if s_next == world_instance.environment['goal']:
-                    T = t + 1
-                    episode_terms['targets'].append(r - episode_terms['q'][t])
-                else:
-                    a_next, sigma = get_next_action_and_sigma(world_instance, episode_terms, t, args)
-                    episode_terms['q'].append(world_instance.Q[s_next, a_next])
-                    target = calc_target(r, sigma, args, episode_terms, t, world_instance, s_next)
-                    episode_terms['targets'].append(target)
-                    episode_terms['p'].append(world_instance.P[s_next, a_next])
-            tau = update_Q_and_return_tau(world_instance, args, episode_terms, t, T)
-        
-        print(world_instance.environment['grid'])
-        print('number of steps = ' + str(episode_terms['steps']))
-        n_steps.append(episode_terms['steps'])
-        rewards.append(episode_terms['reward'])
+        run_an_episode(world_instance, episode, args, n_steps, rewards)
     
     averages['average_steps'].append(np.average(n_steps))
     print('average number of steps = ' + str(averages['average_steps'][-1]))
