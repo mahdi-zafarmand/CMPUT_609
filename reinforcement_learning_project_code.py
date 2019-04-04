@@ -57,43 +57,48 @@ class Environment:
 class Agent:
     def __init__(self, environment):
         self.environment = environment
-        self.states = environment.states
-        self.actions = {}
-        self.position = []
+        self.valid_actions = {}
+        self.passed_states = []
         self.n_obstacles = 0
         self.n_borders = 0
         self.sigma = 0.5
         self.set_actions()
-        self.P = np.zeros((len(self.states), self.actions['number']))
+        self.P = np.zeros((len(self.environment.states), self.valid_actions['number']))
         self.Q = np.zeros(self.P.shape)
+
+    def reset_for_new_episode(self):
+        self.passed_states.clear()
+        self.n_obstacles = 0
+        self.n_borders = 0
+        self.sigma = 0.5
 
     # this method determines valid moves for the agent.
     def set_actions(self):
-        self.actions['RIGHT'] = 0
-        self.actions['UP'] = 1
-        self.actions['LEFT'] = 2
-        self.actions['DOWN'] = 3
-        self.actions['number'] = len(self.actions)
+        self.valid_actions['RIGHT'] = 0
+        self.valid_actions['UP'] = 1
+        self.valid_actions['LEFT'] = 2
+        self.valid_actions['DOWN'] = 3
+        self.valid_actions['number'] = len(self.valid_actions)
 
     # this method resets the probability matrix and the state-action matrix.
     def reset_p_and_q(self):
-        self.P = np.zeros((len(self.states), self.actions['number']))
+        self.P = np.zeros((len(self.environment.states), self.valid_actions['number']))
         self.Q = np.zeros(self.P.shape)
 
     # this method forces the agent to act greedily w.r.t epsilon.
     def make_greedy(self, s, epsilon):
-        self.P[s, :] = [epsilon / (self.actions['number'] - 1)]
+        self.P[s, :] = [epsilon / (self.valid_actions['number'] - 1)]
         best_action = np.argmax(self.Q[s, :])
         self.P[s, best_action] = 1 - epsilon
 
     # this method chooses the action for the agent based on the greedy behavior of the agent.
     def choose_action(self, s, epsilon):
         self.make_greedy(s, epsilon)
-        return np.random.choice(range(self.actions['number']), p=self.P[s, :])
+        return np.random.choice(range(self.valid_actions['number']), p=self.P[s, :])
 
     # this method chooses the sigma which is the key argument in the q-sigma algorithm, it is fixed for SARSA
     #  and TreeBackUp.
-    def choose_sigma(self, alg, mode):
+    def choose_sigma(self, alg, mode = None):
         if alg == 'SARSA':
             return 1
         elif alg == 'TreeBackUp':
@@ -101,11 +106,11 @@ class Agent:
         elif alg == 'Qsigma' and mode == 'random':
             return int(np.random.random() < self.sigma)
         elif alg == 'Qsigma' and mode == 'increasing':
-            return None
+            self.sigma += (1 - self.sigma) / 10
+            return int(np.random.random() < self.sigma)
         elif alg == 'Qsigma' and mode == 'decreasing':
-            return None
-        print('ERROR, incorrect sigma alg!')
-        return None
+            self.sigma -= (1 - self.sigma) / 10
+            return int(np.random.random() < self.sigma)
 
     # this method moves the agent to the next state and returns the next state and the corresponding reward.
     def move(self, s, a):
@@ -117,28 +122,30 @@ class Agent:
             return self.move_helper(s, s - 1, '<')
         elif a == 3:
             return self.move_helper(s, s + self.environment.info['size'], 'v')
-        print('ERROR, incorrect action!')
-        return None
 
     # this method is an  auxialary method that helps 'move' method to function.
     def move_helper(self, s_prev, s_next, direction):
-        self.environment.info['grid'][self.states[s_prev]] = direction
+        self.environment.info['grid'][self.environment.states[s_prev]] = direction
         border = self.environment.info['borders'][direction]
-        self.position.append(s_next)
         if s_prev in border:
             self.n_borders += 1
             self.environment.reset()
-            return self.environment.info['start'], self.environment.rewards['crash']
+            self.passed_states.append(self.environment.info['start'])
+            return self.passed_states[-1], self.environment.rewards['crash']
         if s_next in self.environment.info['obstacles']:
-            self.n_borders += 1
+            self.n_obstacles += 1
             self.environment.reset()
-            return self.environment.info['start'], self.environment.rewards['crash']
-        self.environment.info['grid'][self.states[s_next]] = 'O'
+            self.passed_states.append(self.environment.info['start'])
+            return self.passed_states[-1], self.environment.rewards['crash']
+        self.environment.info['grid'][self.environment.states[s_next]] = 'O'
         if s_next == self.environment.info['checkpoint']:
+            self.passed_states.append(s_next)
             return s_next, self.environment.rewards['checkpoint']
         elif s_next == self.environment.info['goal']:
+            self.passed_states.append(s_next)
             return s_next, self.environment.rewards['win']
         else:
+            self.passed_states.append(s_next)
             return s_next, self.environment.rewards['step']
 
 
@@ -231,35 +238,27 @@ class Episode:
 
 
 class Experiment:
-    def __init__(self):
-        self.alg = 'SARSA'
+    def __init__(self, n_experiments, n_episodes):
+        self.alg = 'TreeBackUp'
         self.mode = 'random'
-        self.n_episodes = 2000
+        self.n_episodes = n_episodes
         self.n_step = 5
         self.gamma = 0.99
         self.alpha = 0.1
         self.epsilon = 0.1
-        self.n_experiments = 10
-        self.n_steps = []
+        self.n_experiments = n_experiments
+        self.steps = []
         self.rewards = []
 
-    def reset(self):
-        self.n_steps = []
+    def run_a_new_experiment(self, environment, averages):
+        self.steps = []
         self.rewards = []
-
-    def set_n_experiments(self, n):
-        self.n_experiments = n
-
-    def set_n_episodes(self, n):
-        self.n_episodes = n
-
-    def run(self, environment, agent, averages):
-        agent.reset_p_and_q()
+        agent = Agent(environment)
         for episode_counter in range(self.n_episodes):
             episode = Episode(environment, agent)
-            episode.run(self, episode_counter, self.n_steps, self.rewards)
-
-        averages['average_steps'].append(np.average(self.n_steps))
+            episode.run(self, episode_counter, self.steps, self.rewards)
+            
+        averages['average_steps'].append(np.average(self.steps))
         if len(averages['average_steps']) > 1:
             print('average number of steps = ' + str(averages['average_steps'][-1]))
         averages['average_reward'].append(np.average(self.rewards))
@@ -267,22 +266,17 @@ class Experiment:
 
 
 class Project:
-    def __init__(self):
+    def __init__(self, n=1, m=1):
         self.environment = Environment()
         self.agent = Agent(self.environment)
-        self.experiment = Experiment()
+        self.experiment = Experiment(n, m)
         self.averages = {}
-
-    def initialize(self, n_experiments, n_episodes):
         self.averages['average_steps'] = []
         self.averages['average_reward'] = []
-        self.experiment.set_n_experiments(n_experiments)
-        self.experiment.set_n_episodes(n_episodes)
 
     def run(self):
         for _ in range(self.experiment.n_experiments):
-            self.experiment.reset()
-            self.experiment.run(self.environment, self.agent, self.averages)
+            self.experiment.run_a_new_experiment(self.environment, self.averages)
 
     def print_results(self, detail = None):
         if detail:
@@ -293,10 +287,9 @@ class Project:
 
 
 def main():
-    n_experiments = 1
-    n_episodes = 1
-    project = Project()
-    project.initialize(n_experiments, n_episodes)
+    # n_experiments = 1
+    # n_episodes = 1
+    project = Project(2, 10)
     project.run()
     project.print_results()
 
