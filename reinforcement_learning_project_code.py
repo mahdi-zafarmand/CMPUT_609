@@ -150,37 +150,38 @@ class Agent:
 
 
 class Episode:
-    def __init__(self, environment, agent):
+    def __init__(self, agent):
         self.cum_steps = 0
         self.cum_reward = 0
         self.states_list = []
-        self.actions = []
-        self.p = []
-        self.q = []
-        self.rewards_list = []
-        self.environment = environment
+        self.actions_list = []
+        self.p_for_return = []
+        self.q_for_return = []
+        self.reward_for_return = []
         self.agent = agent
+        self.environment = agent.environment
         self.t = -1
         self.T = np.inf
         self.tau = 0
-        self.s_next = 0
         self.r = 0
+        self.s_next = 0
         self.a_next = 0
         self.sigma = 0
         self.sigmas = []
 
     # this method initializes the Episode class then makes the agent choose an action.
     def initialize(self, args):
+        self.environment.reset()
         action = self.agent.choose_action(self.environment.info['start'], args.epsilon)
         self.states_list.append(self.environment.info['start'])
-        self.actions.append(action)
+        self.actions_list.append(action)
         self.sigmas = [1]
-        self.p.append(self.agent.P[self.environment.info['start'], action])
-        self.q.append(self.agent.Q[self.environment.info['start'], action])
+        self.p_for_return.append(self.agent.P[self.environment.info['start'], action])
+        self.q_for_return.append(self.agent.Q[self.environment.info['start'], action])
 
     # this method updates the state of the agent and the received reward.
     def update_next_state_and_reward(self):
-        self.s_next, self.r = self.agent.move(self.states_list[self.t], self.actions[self.t])
+        self.s_next, self.r = self.agent.move(self.states_list[self.t], self.actions_list[self.t])
         self.states_list.append(self.s_next)
         self.cum_steps += 1
         self.cum_reward += self.r
@@ -188,15 +189,15 @@ class Episode:
     # this method updates the action of the agent and the working sigma.
     def update_next_action_and_sigma(self, args):
         self.a_next = self.agent.choose_action(self.states_list[self.t+ 1], args.epsilon)
-        self.actions.append(self.a_next)
+        self.actions_list.append(self.a_next)
         self.sigma = self.agent.choose_sigma(args.alg, args.mode)
         self.sigmas.append(self.sigma)
 
     # this method calculates the target value.
     def calc_target(self, args):
-        target = self.r + self.sigma * args.gamma * self.q[self.t + 1]
+        target = self.r + self.sigma * args.gamma * self.q_for_return[self.t + 1]
         target += (1 - self.sigma) * args.gamma * np.dot(self.agent.P[self.s_next, :], self.agent.Q[self.s_next, :])
-        target -= self.q[self.t]
+        target -= self.q_for_return[self.t]
         return target
 
     # this method updates the q matrix and number of steps the agent should consider for the overall return value (tau)
@@ -204,18 +205,17 @@ class Episode:
         self.tau = self.t - args.n_step + 1
         if self.tau >= 0:
             e = 1
-            g = self.q[self.tau]
+            g = self.q_for_return[self.tau]
             for k in range(self.tau, min(self.t, self.T - 1) + 1):
-                g += e * self.rewards_list[k]
-                e *= args.gamma * ((1-self.sigmas[k]) * self.p[k] + self.sigmas[k])
-            error = g - self.agent.Q[self.states_list[self.tau], self.actions[self.tau]]
-            self.agent.Q[self.states_list[self.tau], self.actions[self.tau]] += args.alpha * error
+                g += e * self.reward_for_return[k]
+                e *= args.gamma * ((1-self.sigmas[k]) * self.p_for_return[k] + self.sigmas[k])
+            error = g - self.agent.Q[self.states_list[self.tau], self.actions_list[self.tau]]
+            self.agent.Q[self.states_list[self.tau], self.actions_list[self.tau]] += args.alpha * error
             self.agent.make_greedy(self.states_list[self.tau], args.epsilon)
 
     # this method makes the agent to run for a single episode.
-    def run(self, args, episode_counter=0, n_steps=[], rewards=[]):
-        print('\nEpisode: ' + str(episode_counter + 1) + '/' + str(args.n_episodes) + " ...")
-        self.environment.reset()
+    def run(self, args, ep_counter=0, ex_counter = 0, n_steps=[], rewards=[]):
+        print('\nEpisode: ' + str(ep_counter + 1) + '/' + str(args.n_episodes) + " from experiment number " + str(ex_counter + 1) +" ...")
         self.initialize(args)
         while self.tau != self.T - 1:
             self.t += 1
@@ -223,17 +223,19 @@ class Episode:
                 self.update_next_state_and_reward()
                 if self.s_next == self.environment.info['goal']:
                     self.T = self.t + 1
-                    self.rewards_list.append(self.r - self.q[self.t])
+                    self.reward_for_return.append(self.r - self.q_for_return[self.t])
                 else:
                     self.update_next_action_and_sigma(args)
-                    self.q.append(self.agent.Q[self.s_next, self.a_next])
+                    self.q_for_return.append(self.agent.Q[self.s_next, self.a_next])
                     target = self.calc_target(args)
-                    self.rewards_list.append(target)
-                    self.p.append(self.agent.P[self.s_next, self.a_next])
+                    self.reward_for_return.append(target)
+                    self.p_for_return.append(self.agent.P[self.s_next, self.a_next])
             self.update_q_and_return_tau(args)
-        print(self.environment.info['grid'])
+        # print(self.environment.info['grid'])
         print('number of steps = ' + str(self.cum_steps))
+        # it will finally contains the number of steps for every episode we have in a single experiment
         n_steps.append(self.cum_steps)
+        # it will finally contains the amount of reward for every episode we have in a single experiment
         rewards.append(self.cum_reward)
 
 
@@ -247,22 +249,23 @@ class Experiment:
         self.alpha = 0.1
         self.epsilon = 0.1
         self.n_experiments = n_experiments
-        self.steps = []
-        self.rewards = []
+        self.steps = []     # array of integers, each integer represents the number of steps in an episode
+        self.rewards = []   # array of real number, each number represents the amount of reward in an episode
 
-    def run_a_new_experiment(self, environment, averages):
+    def run_a_new_experiment(self, environment, averages, experiment_counter):
         self.steps = []
         self.rewards = []
         agent = Agent(environment)
         for episode_counter in range(self.n_episodes):
-            episode = Episode(environment, agent)
-            episode.run(self, episode_counter, self.steps, self.rewards)
+            episode = Episode(agent)
+            episode.run(self, episode_counter, experiment_counter, self.steps, self.rewards)
             
-        averages['average_steps'].append(np.average(self.steps))
-        if len(averages['average_steps']) > 1:
-            print('average number of steps = ' + str(averages['average_steps'][-1]))
-        averages['average_reward'].append(np.average(self.rewards))
-        print('average return = ' + str(averages['average_reward'][-1]))
+        # array of arrays, each array represents a set of step numbers in all episodes
+        averages['average_steps'].append(self.steps)
+        print('average number of steps = ' + str(np.average(averages['average_steps'][-1])))
+        # array of arrays, each array represents a set of reward values in all episodes
+        averages['average_reward'].append(self.rewards)
+        print('average return = ' + str(np.average(averages['average_reward'][-1])))
 
 
 class Project:
@@ -270,28 +273,32 @@ class Project:
         self.environment = Environment()
         self.agent = Agent(self.environment)
         self.experiment = Experiment(n, m)
-        self.averages = {}
-        self.averages['average_steps'] = []
-        self.averages['average_reward'] = []
+        self.results = {}
+        self.results['average_steps'] = []
+        self.results['average_reward'] = []
 
     def run(self):
-        for _ in range(self.experiment.n_experiments):
-            self.experiment.run_a_new_experiment(self.environment, self.averages)
+        for n in range(self.experiment.n_experiments):
+            self.experiment.run_a_new_experiment(self.environment, self.results, n)
 
-    def print_results(self, detail = None):
+    def return_results(self, detail = None):
         if detail:
-            print("\nsteps: " + str(self.averages['average_steps']))
-            print("steps avg: " + str(np.average(self.averages['average_steps'])))
-            print("rewards: " + str(self.averages['average_reward']))
-            print("rewards avg: " + str(np.average(self.averages['average_reward'])))
-
+            print("\nsteps: " + str(self.results['average_steps']))
+            print("steps avg: " + str(np.average(self.results['average_steps'])))
+            print("rewards: " + str(self.results['average_reward']))
+            print("rewards avg: " + str(np.average(self.results['average_reward'])))
+        return self.results
 
 def main():
     # n_experiments = 1
     # n_episodes = 1
-    project = Project(2, 10)
+    project = Project(5, 1000)
     project.run()
-    project.print_results()
+    results = project.return_results()
+    steps_information = np.array(results['average_steps'])
+    rewards_information = np.array(results['average_reward'])
+    print(steps_information.shape)
+    print(rewards_information.shape)
 
 
 if __name__ == "__main__":
