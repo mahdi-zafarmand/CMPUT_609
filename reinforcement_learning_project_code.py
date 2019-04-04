@@ -5,36 +5,13 @@ class Environment:
     def __init__(self):
         self.info = {}
         self.states = []
-        self.actions = {}
         self.rewards = {}
         self.initialize()
-        self.sigma = 0.5     
-        self.P = np.zeros((len(self.states), self.actions['number']))
-        self.Q = np.zeros(self.P.shape)
 
     def initialize(self):
-        self.set_actions()
         self.reset()
         self.set_states()
         self.set_rewards()
-
-    def set_states(self):
-        size_of_environment = self.info['grid'].shape
-        for i in range(size_of_environment[0] * size_of_environment[1]):
-            self.states.append((i // size_of_environment[0], i % size_of_environment[1]))
-
-    def set_actions(self):
-        self.actions['RIGHT'] = 0
-        self.actions['UP'] = 1
-        self.actions['LEFT'] = 2
-        self.actions['DOWN'] = 3
-        self.actions['number'] = len(self.actions)
-
-    def set_rewards(self):
-        self.rewards['crash'] = -10
-        self.rewards['checkpoint'] = 0
-        self.rewards['win'] = 1000
-        self.rewards['step'] = -1
 
     def reset(self):
         grid = np.array([
@@ -61,6 +38,38 @@ class Environment:
         self.info['goal'] = 9
         self.info['checkpoint'] = 88
 
+    def set_states(self):
+        size_of_environment = self.info['grid'].shape
+        for i in range(size_of_environment[0] * size_of_environment[1]):
+            self.states.append((i // size_of_environment[0], i % size_of_environment[1]))
+
+    def set_rewards(self):
+        self.rewards['crash'] = -10
+        self.rewards['checkpoint'] = 0
+        self.rewards['win'] = 1000
+        self.rewards['step'] = -1
+
+
+class Agent:
+    def __init__(self, environment):
+        self.environment = environment
+        self.states = environment.states
+        self.actions = {}
+        self.sigma = 0.5
+        self.initialize()
+        self.P = np.zeros((len(self.states), self.actions['number']))
+        self.Q = np.zeros(self.P.shape)
+
+    def initialize(self):
+        self.set_actions()
+
+    def set_actions(self):
+        self.actions['RIGHT'] = 0
+        self.actions['UP'] = 1
+        self.actions['LEFT'] = 2
+        self.actions['DOWN'] = 3
+        self.actions['number'] = len(self.actions)
+
     def reset_p_and_q(self):
         self.P = np.zeros((len(self.states), self.actions['number']))
         self.Q = np.zeros(self.P.shape)        
@@ -74,45 +83,45 @@ class Environment:
         self.make_greedy(s, epsilon)
         return np.random.choice(range(self.actions['number']), p=self.P[s, :])
 
-    def choose_sigma(self, mode):
-        if mode == 'SARSA':
+    def choose_sigma(self, alg, mode):
+        if alg == 'SARSA':
             return 1
-        elif mode == 'TreeBackUp':
+        elif alg == 'TreeBackUp':
             return 0
-        elif mode == 'Qsigma':
-            return (int) (np.random.random() < self.sigma)
-        print('ERROR, incorrcet sigma mode!')
+        elif alg == 'Qsigma':
+            return int(np.random.random() < self.sigma)
+        print('ERROR, incorrect sigma alg!')
         return None
 
     def move(self, s, a):
         if a == 0:
             return self.move_helper(s, s + 1, '>')
         elif a == 1:
-            return self.move_helper(s, s - self.info['size'], '^')
+            return self.move_helper(s, s - self.environment.info['size'], '^')
         elif a == 2:
             return self.move_helper(s, s - 1, '<')
         elif a == 3:
-            return self.move_helper(s, s + self.info['size'], 'v')
-        print('ERROR, incorrcet action!')
+            return self.move_helper(s, s + self.environment.info['size'], 'v')
+        print('ERROR, incorrect action!')
         return None
 
     def move_helper(self, s_prev, s_next, direction):
-        self.info['grid'][self.states[s_prev]] = direction
-        border = self.info['borders'][direction]
-        if s_prev in border or s_next in self.info['obstacles']:
-            self.reset()
-            return self.info['start'], self.rewards['crash']
-        self.info['grid'][self.states[s_next]] = 'O'
-        if s_next == self.info['checkpoint']:
-            return s_next, self.rewards['checkpoint']
-        elif s_next == self.info['goal']:
-            return s_next, self.rewards['win']
+        self.environment.info['grid'][self.states[s_prev]] = direction
+        border = self.environment.info['borders'][direction]
+        if s_prev in border or s_next in self.environment.info['obstacles']:
+            self.environment.reset()
+            return self.environment.info['start'], self.environment.rewards['crash']
+        self.environment.info['grid'][self.states[s_next]] = 'O'
+        if s_next == self.environment.info['checkpoint']:
+            return s_next, self.environment.rewards['checkpoint']
+        elif s_next == self.environment.info['goal']:
+            return s_next, self.environment.rewards['win']
         else:
-            return s_next, self.rewards['step']
+            return s_next, self.environment.rewards['step']
 
 
 class Episode:
-    def __init__(self, environment):
+    def __init__(self, environment, agent):
         self.cum_steps = 0
         self.cum_reward = 0
         self.states_list = []
@@ -121,6 +130,7 @@ class Episode:
         self.q = []
         self.rewards_list = []
         self.environment = environment
+        self.agent = agent
         self.t = -1
         self.T = np.inf
         self.tau = 0
@@ -128,44 +138,45 @@ class Episode:
         self.r = 0
         self.a_next = 0
         self.sigma = 0
-    
+        self.sigmas = []
+
     def initialize(self, args):
-        action = self.environment.choose_action(self.environment.info['start'], args.epsilon)
+        action = self.agent.choose_action(self.environment.info['start'], args.epsilon)
         self.states_list.append(self.environment.info['start'])
         self.actions.append(action)
         self.sigmas = [1]
-        self.p.append(self.environment.P[self.environment.info['start'], action])
-        self.q.append(self.environment.Q[self.environment.info['start'], action])
+        self.p.append(self.agent.P[self.environment.info['start'], action])
+        self.q.append(self.agent.Q[self.environment.info['start'], action])
 
     def update_next_state_and_reward(self):
-        self.s_next, self.r = self.environment.move(self.states_list[self.t], self.actions[self.t])
+        self.s_next, self.r = self.agent.move(self.states_list[self.t], self.actions[self.t])
         self.states_list.append(self.s_next)
         self.cum_steps += 1
         self.cum_reward += self.r
 
     def update_next_action_and_sigma(self, args):
-        self.a_next = self.environment.choose_action(self.states_list[self.t+ 1], args.epsilon)
+        self.a_next = self.agent.choose_action(self.states_list[self.t+ 1], args.epsilon)
         self.actions.append(self.a_next)
-        self.sigma = self.environment.choose_sigma(args.mode)
+        self.sigma = self.agent.choose_sigma(args.alg, args.mode)
         self.sigmas.append(self.sigma)
 
     def calc_target(self, args):
         target = self.r + self.sigma * args.gamma * self.q[self.t + 1]
-        target += (1 - self.sigma) * args.gamma * np.dot(self.environment.P[self.s_next, :], self.environment.Q[self.s_next, :])
+        target += (1 - self.sigma) * args.gamma * np.dot(self.agent.P[self.s_next, :], self.agent.Q[self.s_next, :])
         target -= self.q[self.t]
         return target
 
-    def update_Q_and_return_tau(self, args):
+    def update_q_and_return_tau(self, args):
         self.tau = self.t - args.n_step + 1
         if self.tau >= 0:
-            E = 1
-            G = self.q[self.tau]
-            for k in range(self.tau, min(self.t, self.T - 1)):
-                G += E * self.rewards_list[k]
-                E *= args.gamma * ((1-self.sigmas[k + 1]) * self.p[k + 1] + self.sigmas[k + 1])
-            error = G - self.environment.Q[self.states_list[self.tau], self.actions[self.tau]]
-            self.environment.Q[self.states_list[self.tau], self.actions[self.tau]] += args.alpha * error
-            self.environment.make_greedy(self.states_list[self.tau], args.epsilon)
+            e = 1
+            g = self.q[self.tau]
+            for k in range(self.tau, min(self.t, self.T - 1) + 1):
+                g += e * self.rewards_list[k]
+                e *= args.gamma * ((1-self.sigmas[k]) * self.p[k] + self.sigmas[k])
+            error = g - self.agent.Q[self.states_list[self.tau], self.actions[self.tau]]
+            self.agent.Q[self.states_list[self.tau], self.actions[self.tau]] += args.alpha * error
+            self.agent.make_greedy(self.states_list[self.tau], args.epsilon)
 
     def run(self, episode_counter, args, n_steps, rewards):
         print('\nEpisode: ' + str(episode_counter + 1) + '/' + str(args.n_episodes) + " ...")
@@ -180,25 +191,26 @@ class Episode:
                     self.rewards_list.append(self.r - self.q[self.t])
                 else:
                     self.update_next_action_and_sigma(args)
-                    self.q.append(self.environment.Q[self.s_next, self.a_next])
+                    self.q.append(self.agent.Q[self.s_next, self.a_next])
                     target = self.calc_target(args)
                     self.rewards_list.append(target)
-                    self.p.append(self.environment.P[self.s_next, self.a_next])    
-            self.update_Q_and_return_tau(args)
+                    self.p.append(self.agent.P[self.s_next, self.a_next])
+            self.update_q_and_return_tau(args)
         print(self.environment.info['grid'])
         print('number of steps = ' + str(self.cum_steps))
         n_steps.append(self.cum_steps)
         rewards.append(self.cum_reward)
 
 
-class Expeiment:
+class Experiment:
     def __init__(self):
-        self.mode = 'TreeBackUp'
+        self.alg = 'TreeBackUp'
+        self.mode = 'const'
         self.n_episodes = 2000
         self.n_step = 5
         self.gamma = 0.99
         self.alpha = 0.1
-        self.epsilon = 0.05
+        self.epsilon = 0.1
         self.n_experiments = 10
         self.n_steps = []
         self.rewards = []
@@ -207,10 +219,10 @@ class Expeiment:
         self.n_steps = []
         self.rewards = []
 
-    def run(self, environment, averages):
-        environment.reset_p_and_q()
+    def run(self, environment, agent, averages):
+        agent.reset_p_and_q()
         for episode_counter in range(self.n_episodes):
-            episode = Episode(environment)
+            episode = Episode(environment, agent)
             episode.run(episode_counter, self, self.n_steps, self.rewards)
         
         averages['average_steps'].append(np.average(self.n_steps))
@@ -222,7 +234,8 @@ class Expeiment:
 class Project:
     def __init__(self):
         self.environment = Environment()
-        self.experiment = Expeiment()
+        self.agent = Agent(self.environment)
+        self.experiment = Experiment()
         self.averages = {}
 
     def initialize(self):
@@ -232,7 +245,7 @@ class Project:
     def run(self):
         for _ in range(self.experiment.n_experiments):
             self.experiment.reset()
-            self.experiment.run(self.environment, self.averages)
+            self.experiment.run(self.environment, self.agent, self.averages)
 
     def print_results(self):
         print("\nsteps: " + str(self.averages['average_steps']))
