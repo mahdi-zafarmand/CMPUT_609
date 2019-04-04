@@ -56,12 +56,9 @@ class Agent:
         self.states = environment.states
         self.actions = {}
         self.sigma = 0.5
-        self.initialize()
+        self.set_actions()
         self.P = np.zeros((len(self.states), self.actions['number']))
         self.Q = np.zeros(self.P.shape)
-
-    def initialize(self):
-        self.set_actions()
 
     def set_actions(self):
         self.actions['RIGHT'] = 0
@@ -178,7 +175,7 @@ class Episode:
             self.agent.Q[self.states_list[self.tau], self.actions[self.tau]] += args.alpha * error
             self.agent.make_greedy(self.states_list[self.tau], args.epsilon)
 
-    def run(self, episode_counter, args, n_steps, rewards):
+    def run(self, episode_counter=0, args=None, n_steps=[], rewards=[]):
         print('\nEpisode: ' + str(episode_counter + 1) + '/' + str(args.n_episodes) + " ...")
         self.environment.reset()
         self.initialize(args)
@@ -263,3 +260,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
